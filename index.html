@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Untuk Kalian — Dicka Nugraha</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: #0d0d0d;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    min-height: 100vh; font-family: 'Segoe UI', sans-serif;
+    padding: 20px;
+  }
+  h1 {
+    color: #c9a84c; font-size: 1rem; letter-spacing: 3px;
+    text-transform: uppercase; margin-bottom: 14px; text-align: center;
+  }
+  #wrap { position: relative; width: 100%; max-width: 700px; }
+  canvas {
+    display: block; width: 100%; border-radius: 14px;
+    border: 1.5px solid #c9a84c44;
+    box-shadow: 0 0 40px #c9a84c22;
+  }
+  #speech-bubble {
+    display: none; position: absolute; left: 55%; top: 36px;
+    background: #fffbe8; border: 1.5px solid #c9a84c;
+    border-radius: 12px; padding: 10px 14px;
+    max-width: 240px; font-size: 12px; line-height: 1.7;
+    color: #222; z-index: 10; pointer-events: none;
+    box-shadow: 0 4px 16px #0003;
+  }
+  #speech-bubble::after {
+    content: ''; position: absolute; bottom: -10px; left: 36px;
+    border: 5px solid transparent; border-top-color: #c9a84c;
+  }
+  #progress-bar {
+    width: 100%; max-width: 700px;
+    height: 4px; background: #222; border-radius: 4px;
+    margin: 12px 0 6px; overflow: hidden;
+  }
+  #progress-fill {
+    height: 100%; background: linear-gradient(90deg, #c9a84c, #f0d080);
+    width: 0%; transition: width .3s; border-radius: 4px;
+  }
+  #caption {
+    color: #888; font-size: 12px; text-align: center;
+    min-height: 1.5em; margin-bottom: 12px; max-width: 700px;
+  }
+  #btn-start {
+    padding: 10px 32px; background: #c9a84c; color: #0d0d0d;
+    border: none; border-radius: 8px; font-size: 14px;
+    font-weight: 700; cursor: pointer; letter-spacing: 1px;
+    transition: background .2s, transform .1s;
+    margin-bottom: 18px;
+  }
+  #btn-start:hover { background: #e0c060; }
+  #btn-start:active { transform: scale(.97); }
+  .footer {
+    color: #444; font-size: 11px; text-align: center;
+    margin-top: 10px; letter-spacing: 1px;
+  }
+  .footer a { color: #c9a84c; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<h1>✦ Untuk Kalian ✦</h1>
+
+<div id="wrap">
+  <canvas id="c" width="700" height="390"></canvas>
+  <div id="speech-bubble"></div>
+</div>
+
+<div id="progress-bar"><div id="progress-fill"></div></div>
+<div id="caption">Tekan tombol untuk mulai orasi</div>
+<button id="btn-start">▶ Mulai Orasi</button>
+
+<div class="footer">
+  Bergabung &amp; bicara di <a href="https://discord.gg/dAUFpMnc" target="_blank">discord.gg/dAUFpMnc</a>
+  &nbsp;·&nbsp; TikTok: <a href="https://tiktok.com/@spa60art" target="_blank">@spa60art</a>
+  &nbsp;·&nbsp; YouTube: <a href="https://www.youtube.com/@PAS-6.0" target="_blank">@PAS-6.0</a>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const bubble = document.getElementById('speech-bubble');
+const caption = document.getElementById('caption');
+const fill = document.getElementById('progress-fill');
+const btn = document.getElementById('btn-start');
+const W = 700, H = 390;
+let frame = 0, running = false, raf;
+const crowd = [];
+
+const lines = [
+  { at: 0,   text: "Permisi!\nBapak, ibu, putra, putri...\ntolong dengarkan, saya akan berorasi!", caption: "Orator mulai bicara — belum ada yang menoleh." },
+  { at: 65,  text: "Sekarang era seperti ini pasti bikin menguras energi, terlebih membuat emosi...", caption: "Beberapa orang mulai penasaran dan menoleh." },
+  { at: 135, text: "...karena serba tidak pasti, ditambah banyak berita memprovokasi yang makin kesini menjadi-jadi!", caption: "Separuh keramaian mulai tertarik mendekat." },
+  { at: 210, text: "Pasti sering mendem emosi atau udah usaha release tapi masih ada yang ketahan di diri...", caption: "Hampir semua wajah kini menghadap orator." },
+  { at: 285, text: "Maka itu saya bawa OPSI — sebuah tools yang bisa digunakan untuk meluapkan agar tidak ada yang tertahan lagi sekaligus memulihkan diri!", caption: "Semua orang berhenti dan mendengarkan serius." },
+  { at: 370, text: "Jika tertarik bisa dibicarakan di tempat ini:\ndiscord.gg/dAUFpMnc", caption: "Keramaian antusias mengerumuni orator!" },
+];
+
+const segments = [
+  { end: 65,  tgt: 0.0 },
+  { end: 135, tgt: 0.28 },
+  { end: 210, tgt: 0.58 },
+  { end: 285, tgt: 0.80 },
+  { end: 370, tgt: 0.93 },
+  { end: 460, tgt: 1.0  },
+];
+
+function initCrowd() {
+  crowd.length = 0;
+  const colors = ['#f4a77a','#d4875a','#c97c60','#e8c5a0','#a0754a','#e0a888','#b87860','#cc9966','#ddb080'];
+  const leftZones  = Array.from({length:14},(_,i) => ({ bx: 65 + (i%4)*68,  by: 155 + Math.floor(i/4)*58 + (i%2)*14 }));
+  const rightZones = Array.from({length:14},(_,i) => ({ bx: 450 + (i%4)*50, by: 155 + Math.floor(i/4)*58 + (i%2)*14 }));
+  [...leftZones, ...rightZones].forEach((z, i) => {
+    crowd.push({
+      x: z.bx + (Math.random()-.5)*22,
+      y: z.by + (Math.random()-.5)*18,
+      color: colors[i % colors.length],
+      hs: 12 + Math.random()*5,
+      attn: 0,
+      wobble: Math.random()*Math.PI*2,
+      ws: .018 + Math.random()*.02,
+      type: i % 3,
+    });
+  });
+}
+
+function drawBg() {
+  ctx.fillStyle = '#dce8f0'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#c8d4b8'; ctx.fillRect(0,H*.60,W,H*.40);
+  ctx.strokeStyle = '#b0c0a0'; ctx.lineWidth = .5;
+  for(let x=0;x<W;x+=50){ctx.beginPath();ctx.moveTo(x,H*.60);ctx.lineTo(x,H);ctx.stroke();}
+  for(let y=H*.63;y<H;y+=35){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+
+  const blds = [
+    [30,75,80,155,'#b0c0cc'],[125,95,65,135,'#c0ccd8'],[205,55,55,175,'#a8b8c8'],
+    [510,85,78,145,'#b0bec8'],[598,65,60,165,'#c0cad8'],[665,90,38,140,'#a8bac8']
+  ];
+  blds.forEach(([x,y,w,h,col])=>{
+    ctx.fillStyle=col; ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle='#8898a8'; ctx.lineWidth=.5; ctx.strokeRect(x,y,w,h);
+    ctx.fillStyle='#d8ecf8';
+    for(let wy=y+12;wy<y+h-14;wy+=22)
+      for(let wx=x+9;wx<x+w-9;wx+=20)
+        ctx.fillRect(wx,wy,9,11);
+  });
+
+  [[355,116],[385,126],[320,112]].forEach(([tx,ty])=>{
+    ctx.fillStyle='#5a8e50'; ctx.beginPath(); ctx.arc(tx,ty,22,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#3a6e38'; ctx.beginPath(); ctx.arc(tx-4,ty-7,14,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#7a5838'; ctx.fillRect(tx-4,ty+20,8,18);
+  });
+}
+
+function drawPerson(p) {
+  p.wobble += p.ws;
+  const wb = Math.sin(p.wobble)*1.5;
+  const a = p.attn;
+  const faceDir = (330 > p.x ? 1 : -1) * a * p.hs * .35;
+
+  ctx.fillStyle='rgba(0,0,0,.09)';
+  ctx.beginPath(); ctx.ellipse(p.x, p.y+p.hs+19, p.hs*.85, 4, 0, 0, Math.PI*2); ctx.fill();
+
+  const bh = p.hs * 1.8;
+  ctx.fillStyle = p.color;
+  ctx.beginPath(); ctx.roundRect(p.x - p.hs*.55, p.y + p.hs*.9, p.hs*1.1, bh, 4); ctx.fill();
+
+  const legCol = p.type===1?'#5a4030':'#223';
+  ctx.strokeStyle = legCol; ctx.lineWidth = Math.max(3, p.hs*.38); ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(p.x-4, p.y+p.hs*2.6); ctx.lineTo(p.x-6+wb, p.y+p.hs*3.6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(p.x+4, p.y+p.hs*2.6); ctx.lineTo(p.x+6+wb, p.y+p.hs*3.6); ctx.stroke();
+
+  ctx.fillStyle = p.color;
+  ctx.beginPath(); ctx.arc(p.x+faceDir*.3, p.y, p.hs, 0, Math.PI*2); ctx.fill();
+
+  if(a>.3){
+    ctx.fillStyle='#111';
+    const eo = faceDir*.2;
+    ctx.beginPath(); ctx.arc(p.x-p.hs*.3+eo, p.y-1, 2, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x+p.hs*.3+eo, p.y-1, 2, 0, Math.PI*2); ctx.fill();
+    if(a>.65){
+      ctx.strokeStyle='#6a3020'; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.arc(p.x+eo, p.y+p.hs*.22, p.hs*.28, .1, Math.PI-.1); ctx.stroke();
+    }
+  }
+
+  if(a>.82){
+    ctx.strokeStyle=p.color; ctx.lineWidth=p.hs*.3; ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(p.x+p.hs*.5, p.y+p.hs*1.4);
+    ctx.lineTo(p.x+p.hs*1.2, p.y-p.hs*.5+wb);
+    ctx.stroke();
+  }
+}
+
+function drawOrator(t) {
+  const ox=330, oy=282;
+  const bounce = Math.sin(t*.08)*2;
+  const energy = Math.min(1, t/200);
+
+  ctx.fillStyle='rgba(0,0,0,.13)';
+  ctx.beginPath(); ctx.ellipse(ox,oy+40,22,7,0,0,Math.PI*2); ctx.fill();
+
+  ctx.strokeStyle='#1a237e'; ctx.lineWidth=8; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(ox-6,oy+18); ctx.lineTo(ox-10,oy+40); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ox+6,oy+18); ctx.lineTo(ox+10,oy+40); ctx.stroke();
+
+  ctx.fillStyle='#111';
+  ctx.beginPath(); ctx.ellipse(ox-10,oy+42,8,4,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(ox+10,oy+42,8,4,0,0,Math.PI*2); ctx.fill();
+
+  ctx.fillStyle='#c0392b';
+  ctx.beginPath(); ctx.roundRect(ox-14, oy-10+bounce, 28, 30, 6); ctx.fill();
+
+  const arm = energy*.6;
+  ctx.strokeStyle='#c0392b'; ctx.lineWidth=8;
+  ctx.beginPath(); ctx.moveTo(ox-12,oy+bounce); ctx.lineTo(ox-28-arm*14, oy-18-arm*18+bounce); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ox+12,oy+bounce); ctx.lineTo(ox+26+arm*12, oy-22-arm*16+bounce); ctx.stroke();
+
+  ctx.fillStyle='#333';
+  ctx.beginPath(); ctx.arc(ox+27+arm*12, oy-26-arm*16+bounce, 5, 0, Math.PI*2); ctx.fill();
+
+  ctx.fillStyle='#e8a070';
+  ctx.beginPath(); ctx.arc(ox, oy-22+bounce, 16, 0, Math.PI*2); ctx.fill();
+
+  ctx.fillStyle='#1a1a1a';
+  ctx.beginPath(); ctx.arc(ox, oy-30+bounce, 13, Math.PI, Math.PI*2); ctx.fill();
+
+  ctx.fillStyle='#1a1a1a';
+  ctx.beginPath(); ctx.arc(ox-5, oy-23+bounce, 2, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(ox+5, oy-23+bounce, 2, 0, Math.PI*2); ctx.fill();
+
+  ctx.strokeStyle='#6a3020'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.arc(ox, oy-18+bounce, 5, .2, Math.PI-.2); ctx.stroke();
+
+  if(t>10){
+    const alpha = (Math.sin(t*.15)*.5+.5)*.5;
+    [16,26,38].forEach((r,i)=>{
+      ctx.strokeStyle=`rgba(192,57,43,${alpha*(1-i*.25)})`;
+      ctx.lineWidth=1.5-i*.4;
+      ctx.beginPath(); ctx.arc(ox+28, oy-24+bounce, r, -Math.PI/3, Math.PI/3); ctx.stroke();
+    });
+  }
+}
+
+function getSeg(t) {
+  for(const s of segments) if(t<=s.end) return s;
+  return segments[segments.length-1];
+}
+
+function updateAttention(t) {
+  const tgt = getSeg(t).tgt;
+  crowd.forEach(p => { p.attn += (tgt - p.attn) * .014 * (.4+Math.random()*.6); });
+}
+
+function updateBubble(t) {
+  let shown = null;
+  for(let i=lines.length-1;i>=0;i--){ if(t>=lines[i].at){shown=lines[i];break;} }
+  if(shown){
+    bubble.style.display='block';
+    bubble.innerHTML = shown.text.replace(/\n/g,'<br>');
+    caption.textContent = shown.caption;
+  }
+  fill.style.width = Math.min(100,(t/460)*100)+'%';
+}
+
+function loop() {
+  if(!running) return;
+  frame++;
+  ctx.clearRect(0,0,W,H);
+  drawBg();
+  [...crowd].sort((a,b)=>a.y-b.y).forEach(p=>drawPerson(p));
+  drawOrator(frame);
+  updateAttention(frame);
+  updateBubble(frame);
+  if(frame>=460){
+    running=false;
+    caption.textContent='Semua orang antusias mengelilingi orator! Orasi selesai.';
+    btn.textContent='▶ Ulangi Orasi';
+    btn.style.display='block';
+    return;
+  }
+  raf = requestAnimationFrame(loop);
+}
+
+function start() {
+  if(running) return;
+  frame=0; running=true;
+  initCrowd();
+  btn.style.display='none';
+  bubble.style.display='none';
+  caption.textContent='';
+  cancelAnimationFrame(raf);
+  loop();
+}
+
+initCrowd();
+drawBg();
+[...crowd].sort((a,b)=>a.y-b.y).forEach(p=>drawPerson(p));
+drawOrator(0);
+btn.addEventListener('click', start);
+</script>
+</body>
+</html>
